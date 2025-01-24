@@ -188,7 +188,12 @@ export default {
       default: 'scroll',
     },
   },
-  emits: ['zoom-start', 'zoom-end'],
+  emits: ['flip-left-start',
+    'flip-left-end',
+    'flip-right-start',
+    'flip-right-end',
+    'zoom-start',
+    'zoom-end',],
   data() {
     return {
       viewWidth: 0,
@@ -211,6 +216,7 @@ export default {
       activeCursor: null,
       hasTouchEvents: false,
       hasPointerEvents: false,
+      isFlipping: false,
       minX: Infinity,
       maxX: -Infinity,
       preloadedImages: {},
@@ -302,54 +308,75 @@ export default {
       return Math.round(this.imageHeight * this.pageScale);
     },
     xMargin() {
+      
       return (this.viewWidth - this.pageWidth * this.displayedPages) / 2;
     },
     yMargin() {
+      
       return (this.viewHeight - this.pageHeight) / 2;
     },
     polygonWidth() {
+      
       let w = this.pageWidth / this.nPolygons;
       w = Math.ceil(w + 1 / this.zoom);
       return `${w}px`;
     },
     polygonHeight() {
+      
       return `${this.pageHeight}px`;
     },
     polygonBgSize() {
+      
       return `${this.pageWidth}px ${this.pageHeight}px`;
     },
     polygonArray() {
-      const array = this.makePolygonArray('front').concat(this.makePolygonArray('back'));
-      return array;
+      const front = this.makePolygonArray('front');
+      const back = this.makePolygonArray('back');
+      
+      return front.polygons.concat(back.polygons);
+    },
+    hasLeftPageUrl() {
+      
+      return this.pageUrl(this.leftPage) !== null;
+    },
+    hasRightPageUrl() {
+      
+      return this.pageUrl(this.rightPage) !== null;
     },
     boundingLeft() {
+      
       if (this.displayedPages === 1) {
         return this.xMargin;
       }
-      const x = this.pageUrl(this.leftPage) ? this.xMargin : this.viewWidth / 2;
+      const x = this.hasLeftPageUrl ? this.xMargin : this.viewWidth / 2;
       return x < this.minX ? x : this.minX;
     },
     boundingRight() {
+      
       if (this.displayedPages === 1) {
         return this.viewWidth - this.xMargin;
       }
-      const x = this.pageUrl(this.rightPage) ? this.viewWidth - this.xMargin : this.viewWidth / 2;
+      const x = this.hasRightPageUrl ? this.viewWidth - this.xMargin : this.viewWidth / 2;
       return x > this.maxX ? x : this.maxX;
     },
     centerOffset() {
       const retval = this.centering ? Math.round(this.viewWidth / 2 - (this.boundingLeft + this.boundingRight) / 2) : 0;
+      
       if (this.currentCenterOffset == null && this.imageWidth != null) {
         this.currentCenterOffset = retval;
       }
       return retval;
     },
     centerOffsetSmoothed() {
+      
       return Math.round(this.currentCenterOffset);
     },
     dragToScroll() {
+      
       return !this.hasTouchEvents;
     },
     scrollLeftMin() {
+      
       const w = (this.boundingRight - this.boundingLeft) * this.zoom;
       if (w < this.viewWidth) {
         return (this.boundingLeft + this.centerOffsetSmoothed) * this.zoom - (this.viewWidth - w) / 2;
@@ -357,6 +384,7 @@ export default {
       return (this.boundingLeft + this.centerOffsetSmoothed) * this.zoom;
     },
     scrollLeftMax() {
+      
       const w = (this.boundingRight - this.boundingLeft) * this.zoom;
       if (w < this.viewWidth) {
         return (this.boundingLeft + this.centerOffsetSmoothed) * this.zoom - (this.viewWidth - w) / 2;
@@ -364,6 +392,7 @@ export default {
       return (this.boundingRight + this.centerOffsetSmoothed) * this.zoom - this.viewWidth;
     },
     scrollTopMin() {
+      
       const h = this.pageHeight * this.zoom;
       if (h < this.viewHeight) {
         return this.yMargin * this.zoom - (this.viewHeight - h) / 2;
@@ -371,6 +400,7 @@ export default {
       return this.yMargin * this.zoom;
     },
     scrollTopMax() {
+      
       const h = this.pageHeight * this.zoom;
       if (h < this.viewHeight) {
         return this.yMargin * this.zoom - (this.viewHeight - h) / 2;
@@ -378,13 +408,24 @@ export default {
       return (this.yMargin + this.pageHeight) * this.zoom - this.viewHeight;
     },
     scrollLeftLimited() {
+      
       return Math.min(this.scrollLeftMax, Math.max(this.scrollLeftMin, this.scrollLeft));
     },
     scrollTopLimited() {
+      
       return Math.min(this.scrollTopMax, Math.max(this.scrollTopMin, this.scrollTop));
     },
   },
   watch: {
+    polygonArray() {
+      
+      const front = this.makePolygonArray('front');
+      const back = this.makePolygonArray('back');
+      
+      this.minX = Math.min(front.minX, back.minX);
+      this.maxX = Math.max(front.maxX, back.maxX);
+      this.flip.opacity = Math.min(front.flipOpacity, back.flipOpacity);
+    },
     currentPage() {
       this.firstPage = this.currentPage;
       this.secondPage = this.currentPage + 1;
@@ -397,6 +438,7 @@ export default {
 
       const animate = () => {
         requestAnimationFrame(() => {
+          
           const rate = 0.1;
           const diff = this.centerOffset - this.currentCenterOffset;
           if (Math.abs(diff) < 0.5) {
@@ -413,6 +455,7 @@ export default {
       animate();
     },
     scrollLeftLimited(val) {
+      
       if (this.IE) {
         requestAnimationFrame(() => {
           this.$refs.viewport.scrollLeft = val;
@@ -424,6 +467,7 @@ export default {
     scrollTopLimited(val) {
       if (this.IE) {
         requestAnimationFrame(() => {
+          
           this.$refs.viewport.scrollTop = val;
         });
       } else {
@@ -454,6 +498,7 @@ export default {
   },
   methods: {
     onResize() {
+      
       const { viewport } = this.$refs;
       if (!viewport) return;
 
@@ -499,7 +544,8 @@ export default {
       this.flipStart('right', true);
     },
     makePolygonArray(face) {
-      if (!this.flip.direction) return [];
+      
+      if (!this.flip.direction) return { polygons: [], minX: Infinity, maxX: -Infinity };
 
       let { progress } = this.flip;
       let { direction } = this.flip;
@@ -509,7 +555,7 @@ export default {
         direction = this.forwardDirection;
       }
 
-      this.flip.opacity = this.displayedPages === 1 && progress > 0.7 ? 1 - (progress - 0.7) / 0.3 : 1;
+      const flipOpacity = this.displayedPages === 1 && progress > 0.7 ? 1 - (progress - 0.7) / 0.3 : 1;
 
       const image = face === 'front' ? this.flip.frontImage : this.flip.backImage;
       const polygonWidth = this.pageWidth / this.nPolygons;
@@ -585,8 +631,8 @@ export default {
         rotate = -rotate;
       }
 
-      this.minX = Infinity;
-      this.maxX = -Infinity;
+      let minX = Infinity;
+      let maxX = -Infinity;
       const polygons = [];
       for (let i = 0; i < this.nPolygons; i += 1) {
         const bgPos = `${(i / (this.nPolygons - 1)) * 100}% 0px`;
@@ -603,9 +649,10 @@ export default {
 
         const x0 = m.transformX(0);
         const x1 = m.transformX(polygonWidth);
-        this.maxX = Math.max(Math.max(x0, x1), this.maxX);
-        this.minX = Math.min(Math.min(x0, x1), this.minX);
-
+        
+        maxX = Math.max(Math.max(x0, x1), maxX);
+        minX = Math.min(Math.min(x0, x1), minX);
+        
         const lighting = this.computeLighting(pageRotation - rotate, dRotate);
 
         radian += dRadian;
@@ -613,10 +660,11 @@ export default {
 
         polygons.push([`${face}${i}`, image, lighting, bgPos, m.toString(), Math.abs(Math.round(z))]);
       }
-
-      return polygons;
+      
+      return { polygons, minX, maxX, flipOpacity };
     },
     computeLighting(rot, dRotate) {
+      
       const gradients = [];
       const lightingPoints = [-0.5, -0.25, 0, 0.25, 0.5];
 
@@ -655,6 +703,11 @@ export default {
     },
 
     flipStart(direction, auto) {
+      if (this.isFlipping) {
+        
+        return;
+      }
+      this.isFlipping = true;
       if (direction !== this.forwardDirection) {
         if (this.displayedPages === 1) {
           this.flip.frontImage = this.pageUrl(this.currentPage - 1);
@@ -687,21 +740,35 @@ export default {
           if (auto) this.flipAuto(true);
         });
       });
+      this.isFlipping = false;
     },
 
     flipAuto(ease) {
       const t0 = Date.now();
       const duration = this.flipDuration * (1 - this.flip.progress);
       const startRatio = this.flip.progress;
+      
+      if (this.flip.auto) {
+        return;
+      }
       this.flip.auto = true;
       this.$emit(`flip-${this.flip.direction}-start`, this.page);
 
+      let lastUpdateTime = 0;
+      const minInterval = 1000 / 60;
+
       const animate = () => {
         requestAnimationFrame(() => {
-          const t = Date.now() - t0;
+          const now = Date.now();
+          const t = now - t0;
           let ratio = startRatio + t / duration;
           if (ratio > 1) ratio = 1;
-          this.flip.progress = ease ? easeInOut(ratio) : ratio;
+          const progress = ease ? easeInOut(ratio) : ratio;
+
+          if (now - lastUpdateTime >= minInterval || ratio >= 1) {
+            lastUpdateTime = now;
+            this.flip.progress = progress;
+          }
           if (ratio < 1) {
             animate();
           } else {
@@ -768,14 +835,17 @@ export default {
         this.imageHeight = (ev.target || ev.path[0]).naturalHeight;
         this.preloadImages();
       }
+      
       if (!this.imageLoadCallback) return;
       if (++this.nImageLoad >= this.nImageLoadTrigger) {
         this.imageLoadCallback();
         this.imageLoadCallback = null;
       }
+      
     },
 
     zoomIn(zoomAt = null) {
+      
       if (!this.canZoomIn) return;
       this.zoomIndex += 1;
       this.zoomTo(this.zooms_[this.zoomIndex], zoomAt);
@@ -783,12 +853,14 @@ export default {
 
     zoomOut(zoomAt = null) {
       if (!this.canZoomOut) return;
+      
       this.zoomIndex -= 1;
       this.zoomTo(this.zooms_[this.zoomIndex], zoomAt);
     },
 
     zoomTo(zoom, zoomAt = null) {
       const { viewport } = this.$refs;
+      
       let fixedX;
       let fixedY;
 
@@ -816,13 +888,17 @@ export default {
 
       const animate = () => {
         requestAnimationFrame(() => {
+          
           const t = Date.now() - t0;
           let ratio = t / this.zoomDuration;
           if (ratio > 1 || this.IE) ratio = 1;
           ratio = easeInOut(ratio);
           this.zoom = start + (end - start) * ratio;
+          
           this.scrollLeft = startX + (endX - startX) * ratio;
+          
           this.scrollTop = startY + (endY - startY) * ratio;
+          
           if (t < this.zoomDuration) {
             animate();
           } else {
@@ -831,6 +907,7 @@ export default {
             this.zoom = zoom;
             this.scrollLeft = endX;
             this.scrollTop = endY;
+            
           }
         });
       };
